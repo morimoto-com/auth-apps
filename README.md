@@ -1,52 +1,140 @@
-いいですね。まずは**要点サマリ → 構成図 → 構築手順**の順で、一気に通せる形で提示します。CDKはTypeScript前提です。
+了解！ご要望どおり **pnpm 前提**に直し、**AWS CLI/CDK の環境構築**と **Docker の環境構築**を追記。最後に **ローカル環境図**と**AWS本番図**も追加しました。
+（そのまま上からコピペ実行できる構成にしてあります）
 
 ---
 
 # 要点サマリ（最初に見る版）
 
-* **目的**：Vue(フロント) と Spring Boot(API) のアプリを、**GitHub Actions → AWS**で自動テスト・自動デプロイできる最小〜実務寄り構成を作る。
-* **配信**：フロントは **S3 + CloudFront(OAC)**、APIは **ECS Fargate + ALB**。
-* **認証情報**：**GitHub OIDC** で AWS にロール委譲（長期アクセスキーは使わない）。
-* **IaC**：**AWS CDK(TypeScript)** でインフラをコード化（将来Blue/Green等へ拡張容易）。
-* **テスト**：Vueは Vitest（＋後でPlaywright）、Springは JUnit5（＋Testcontainers推奨）。
-* **運用**：CloudWatch Logs/Alarms、ALBヘルスチェック `/actuator/health`、SPAは`/index.html`にフォールバック。
+* **目的**：Vue(フロント) と Spring Boot(API) を **GitHub Actions → AWS** で自動テスト・自動デプロイ（最小→実務寄りへ拡張容易）。
+* **配信**：フロント **S3 + CloudFront(OAC)**、API **ECS Fargate + ALB**。
+* **認証情報**：**GitHub OIDC** で AWS にロール委譲（長期アクセスキー不使用）。ローカル CDK は **AWS SSO** を推奨。
+* **IaC**：**AWS CDK(TypeScript)**。
+* **テスト**：Vue=Vitest（＋後でPlaywright）、Spring=JUnit5（＋Testcontainers推奨）。
+* **運用**：CloudWatch Logs/Alarms、ALBヘルスチェック `/actuator/health`、SPA は `/index.html` フォールバック。
 
 ---
 
-# 構成図（最小構成 → 実務寄りに拡張しやすい）
+# 構成図（2枚）
+
+## 1) ランタイム（AWS側）
 
 ```
                  +---------------------- GitHub ----------------------+
                  |  PR: lint/test   main: build/deploy (Actions)     |
                  +---------------------------+------------------------+
                                              | OIDC AssumeRole
-                                      +------+------+
-                                      |    AWS     |
-+-------------------+   CloudFront    |             |    ALB (HTTP/HTTPS)
-|  User (Browser)   | <-------------- |  S3 (SPA)   |  <------------------+
-+-------------------+                 |             |                     |
-                                      |  ECS(Fargate)  ← ECR(Image)       |
-                                      |     (Spring Boot API)            |
-                                      |             |                     |
-                                      |   CloudWatch Logs/Alarms         |
-                                      +----------------------------------+
+                                      +------+------+      Route53/ACM(任意)
+                                      |    AWS     |--------------------+
++-------------------+   CloudFront    |             |                    |
+|  User (Browser)   | <-------------- |  S3 (SPA)   |                    |
++-------------------+                 |             |                    |
+                                      |  ALB (HTTPS, /api/*)  <---+      |
+                                      |             ^             |      |
+                                      |   ECS(Fargate)            |      |
+                                      |    (Spring Boot API)      |      |
+                                      |             |             |      |
+                                      |   CloudWatch Logs/Alarms  |      |
+                                      |        ECR (Image) -------+------+
+                                      +---------------------------+
 ```
 
-> ルーティング：
->
-> * `/*` → S3（SPA）
-> * `/api/*` → ALB（ECSのSpring Bootへ） ※CloudFrontでオリジン分岐 or フロントから ALB/独自ドメインへCORS
+**ルーティング例**
+
+* `/*` → S3（SPA）
+* `/api/*` → ALB（ECSのSpring Bootへ）
+
+  * CloudFrontのオリジン分岐、またはフロントから ALB/独自ドメインへ CORS
 
 ---
 
-# 構築手順（コピペで進める実践フロー）
+## 2) ローカル＆CI（開発側）
 
-## 0. 前提インストール
+```
++---------------------+        git push        +---------------------+
+| Dev PC (Windows)    |----------------------->|   GitHub Repository |
+| - Node.js + pnpm    |                        | - Actions           |
+| - Java 21 + Gradle  |    assume role (OIDC)  |   - Front: build->S3
+| - Docker Desktop    |<---------------------->|   - Back : build->ECR
+| - AWS CLI + SSO     |                        |           ->ECS/ALB |
+| - CDK CLI           |   cdk deploy (SSO)     +---------------------+
++---------------------+------------------------------> AWS
+```
 
-* Node.js 18+ / npm（pnpm推奨）
-* AWS CLI v2（`aws configure`は不要：OIDCで実行するため）
-* AWS CDK v2（`npm i -g aws-cdk`）
-* Docker（バックエンドのビルド用）
+* **ローカル**：AWS SSOで一時クレデンシャルを取得して `cdk deploy` 実行
+* **CI**：GitHub OIDCでAWSロールをAssume（長期キー不要）
+
+---
+
+# 構築手順（コピペで進める実践フロー・pnpm版）
+
+## 0. 事前準備（ローカル環境）
+
+### 0-1. Node.js & pnpm
+
+* Node.js 18+（推奨 20）
+* pnpm（Corepack 経由が楽）
+
+```bash
+# Windows PowerShell / macOS / Linux 共通
+corepack enable
+corepack prepare pnpm@latest --activate
+pnpm -v
+```
+
+### 0-2. Java & Gradle
+
+* OpenJDK 21（Temurin など）
+* Gradle は **プロジェクト同梱の wrapper**（`./gradlew`）を使用
+
+### 0-3. Docker
+
+* **Windows**：Docker Desktop + **WSL2** 有効化（推奨）
+
+  * Windows機能で「仮想マシンプラットフォーム」「Linux 用 Windows サブシステム」をON → 再起動
+  * Microsoft Store から Ubuntu などを導入（WSL2）
+  * Docker Desktop をインストールして「Use the WSL 2 based engine」にチェック
+* **macOS**：Docker Desktop をインストール
+* 動作確認：
+
+```bash
+docker version
+docker run --rm hello-world
+```
+
+* 便利設定（任意）：
+
+```bash
+# BuildKit有効（高速化）
+setx DOCKER_BUILDKIT 1          # Windows PowerShell
+export DOCKER_BUILDKIT=1        # macOS/Linux(一時)
+```
+
+### 0-4. AWS CLI v2 & SSO
+
+* AWS CLI v2 をインストール後、**AWS SSO** 設定（ローカルの `cdk deploy` 用）
+
+```bash
+aws --version
+
+# 初回のみ：SSO設定を作成（プロファイル名は dev 例）
+aws configure sso
+# 対話で SSO開始URL / SSOリージョン / アカウント / ロール を選択
+# プロファイル名: dev (例)
+
+# 認証（有効期限切れ時もこれで再ログイン）
+aws sso login --profile dev
+```
+
+> ※ローカルは SSO、CI は OIDC の二刀流が安全＆快適です。
+
+### 0-5. CDK CLI
+
+```bash
+# グローバルにCDK CLIを入れる（pnpm）
+pnpm add -g aws-cdk
+
+cdk --version
+```
 
 ---
 
@@ -54,13 +142,14 @@
 
 ```bash
 mkdir app-cdk && cd app-cdk
-npm init -y
-npm i -D aws-cdk aws-cdk-lib constructs typescript ts-node
-npx cdk init app --language typescript
+pnpm init -y
+pnpm add -D aws-cdk aws-cdk-lib constructs typescript ts-node
+# cdk init はCLI。pnpm dlxでも可:
+# pnpm dlx aws-cdk cdk init app --language typescript
+cdk init app --language typescript
 ```
 
-`bin/app-cdk.ts` に **フロント用 Stack** と **バックエンド用 Stack** を読み込む形でエントリを用意。
-（※先に雛形だけでOK。後でlib配下にファイルを置きます）
+`bin/app-cdk.ts` を修正（フロント/バックの2スタックを起動）：
 
 ```ts
 #!/usr/bin/env node
@@ -80,20 +169,20 @@ Tags.of(app).add('Project', 'VueSpringSample');
 
 ### 1-1. フロント（S3 + CloudFront OAC）
 
-`lib/frontend-spa-stack.ts` を作成（**OAC**・SPAフォールバック込み）。
-
-> ※このファイルは前メッセージで提示した実装をそのまま使えます。迷ったらそのまま貼り付けでOK。
+`lib/frontend-spa-stack.ts` に **OAC** と **SPAフォールバック** を実装（前回提示コードをそのまま利用可）。
 
 ### 1-2. バックエンド（ECR + ECS Fargate + ALB）
 
-`lib/backend-api-stack.ts` を作成（**VPC, ALB, ECS, ECR, SecurityGroup** 一式）。
+`lib/backend-api-stack.ts` に **VPC, ALB, ECS, ECR, SG** を実装（前回提示コードをそのまま利用可）。
 
-> ※こちらも前メッセージのコードをそのまま利用可能。実運用は `ContainerImage.fromEcrRepository` に後で更新。
-
-### 1-3. 初回デプロイ
+### 1-3. 初回デプロイ（ローカルからSSOで）
 
 ```bash
-# CDKのブートストラップ（1アカウント/1リージョンにつき最初の1回）
+# SSOプロファイルを明示（例: dev）
+setx AWS_PROFILE dev        # Windows
+export AWS_PROFILE=dev      # macOS/Linux(一時)
+
+# 1アカウント1リージョンで最初の1回
 cdk bootstrap aws://<ACCOUNT_ID>/ap-northeast-1
 
 # スタック作成
@@ -101,47 +190,47 @@ cdk deploy FrontendSpaStack
 cdk deploy BackendApiStack
 ```
 
-**控える出力**（後でGitHub Actionsにセット）：
+**控える出力**（後でActionsに設定）：
 
 * `SpaBucketName` / `SpaDistributionId` / `SpaUrl`
-* `AlbDns`（ALBのDNS）
-* `EcrRepo`（ECRのURI）
+* `AlbDns`
+* `EcrRepo`（URI）
 
 ---
 
-## 2. GitHub → AWS OIDC ロール作成（長期キー不要）
+## 2. GitHub → AWS OIDC ロール（長期キー不要）
 
-### 2-1. IAM ロール（信頼ポリシー）
+### 2-1. 信頼ポリシー（例）
 
-* サービス：`sts.amazonaws.com`（web identity）
 * プロバイダ：`token.actions.githubusercontent.com`
-* 条件例（最小化例）：
+* 条件：
 
-  * `aud: sts.amazonaws.com`
-  * `sub: repo:<YOUR_GITHUB_OWNER>/<YOUR_REPO>:*`（対象リポに限定）
+  * `aud = sts.amazonaws.com`
+  * `sub = repo:<OWNER>/<REPO>:*`（対象リポに限定）
 
-### 2-2. ロールに付与する権限（当面）
+### 2-2. 付与権限（最小化の目安）
 
-* フロント配信用：`s3:PutObject/DeleteObject/ListBucket`（対象Bucketだけ）、`cloudfront:CreateInvalidation`
-* API配信用：`ecr:*`（ログイン・pushに必要な範囲）、`ecs:UpdateService`, `ecs:Describe*`
-* （必要に応じてスコープをさらに最小化）
+* フロント：`s3:{PutObject,DeleteObject,ListBucket}`, `cloudfront:CreateInvalidation`
+* バック：`ecr:*`（pushに必要な範囲）、`ecs:{UpdateService,Describe*}`
+* `iam:PassRole` が要る構成なら対象ロールを限定
 
-> 作成した **ロールARN** を控える：`arn:aws:iam::<ACCOUNT_ID>:role/github-oidc-deploy`
+> できた **ロールARN** をメモ：`arn:aws:iam::<ACCOUNT_ID>:role/github-oidc-deploy`
 
 ---
 
-## 3. アプリケーション雛形
+## 3. アプリ雛形
 
-### 3-1. フロント（Vue）
+### 3-1. フロント（Vue + Vitest）
 
 ```bash
-# リポジトリの frontend/ に作成
-pnpm create vue@latest
+# ルート直下に frontend/ 作成
+pnpm create vue@latest frontend
+cd frontend
 pnpm i
-pnpm i -D vitest @vitest/ui @testing-library/vue eslint prettier
+pnpm add -D vitest @vitest/ui @testing-library/vue eslint prettier
 ```
 
-* `package.json` 例（抜粋）
+`package.json`（抜粋）
 
 ```json
 {
@@ -154,16 +243,15 @@ pnpm i -D vitest @vitest/ui @testing-library/vue eslint prettier
 }
 ```
 
-* SPA の 404/403 は CloudFront 側で `/index.html` にフォールバック済み。
+* SPAの404/403は CloudFront 側で `/index.html` へフォールバック済み。
 
-### 3-2. バックエンド（Spring Boot）
+### 3-2. バックエンド（Spring Boot + Dockerfile）
 
-* `backend/` に Gradle プロジェクト。`spring-boot-starter-web` / `actuator`。
-* `application.yml` に `management.endpoints.web.exposure.include=health`。
-* **Dockerfile（例）**：
+* `backend/` に Gradle プロジェクト（`spring-boot-starter-web`, `actuator`）
+* `application.yml`：`management.endpoints.web.exposure.include=health`
+* `backend/Dockerfile`
 
 ```dockerfile
-# backend/Dockerfile
 FROM gradle:8.8-jdk21-alpine AS build
 WORKDIR /app
 COPY . .
@@ -177,22 +265,22 @@ EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 ```
 
-* ヘルスチェック：`/actuator/health`（CDKのTargetGroupで設定済み）
+* ヘルスチェック：`/actuator/health`（TargetGroupで設定）
 
 ---
 
-## 4. GitHub Actions（CI/CDの設定）
+## 4. GitHub Actions（CI/CD・pnpm版）
 
-### 4-1. リポジトリSecrets/Variablesに登録
+### 4-1. リポジトリ Variables/Secrets
 
-* `AWS_ROLE_ARN`：先ほどの OIDCロールARN
+* `AWS_ROLE_ARN`：OIDCロールARN
 * `AWS_REGION`：`ap-northeast-1`
 * `SPA_BUCKET`：`SpaBucketName`
 * `SPA_DIST_ID`：`SpaDistributionId`
-* `ECR_REPO`：`spring-api`（CDK出力に合わせる）
-* `ECS_CLUSTER` / `ECS_SERVICE`：CDKで作成した名称（マネコン or `cdk deploy`出力で確認）
+* `ECR_REPO`：`spring-api`（CDKのECR名に合わせる）
+* `ECS_CLUSTER` / `ECS_SERVICE`：CDKで作った名称
 
-### 4-2. フロント用ワークフロー（`.github/workflows/deploy-frontend.yml`）
+### 4-2. フロント：`.github/workflows/deploy-frontend.yml`
 
 ```yaml
 name: deploy-frontend
@@ -210,7 +298,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-      - run: npm i -g pnpm
+      - run: corepack enable && corepack prepare pnpm@latest --activate
       - run: cd frontend && pnpm i --frozen-lockfile && pnpm run build
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -220,7 +308,7 @@ jobs:
       - run: aws cloudfront create-invalidation --distribution-id ${{ vars.SPA_DIST_ID }} --paths "/*"
 ```
 
-### 4-3. バックエンド用ワークフロー（`.github/workflows/deploy-backend.yml`）
+### 4-3. バック：`.github/workflows/deploy-backend.yml`
 
 ```yaml
 name: deploy-backend
@@ -260,32 +348,40 @@ jobs:
             --force-new-deployment
 ```
 
-> ここまでで、`main` に push すればフロントは S3/CloudFront、バックエンドは ECS まで自動反映。
+> これで `main` への push で、**フロントは S3/CloudFront**、**バックは ECS** まで自動反映。
 
 ---
 
-## 5. 動作確認（チェックリスト）
+## 5. 動作確認チェックリスト
 
-* [ ] **フロント**：`SpaUrl` にアクセスし、ビルド内容が反映される。
-* [ ] **API**：`http://<AlbDns>/actuator/health` が `{"status":"UP"}`。
-* [ ] **ルーティング**：フロントから `/api/...` にアクセスして CORS/エンドポイントが機能。
-
-  * CloudFrontのオリジン分岐 or フロント `.env` で API ベースURL 指定（例：`VITE_API_BASE=https://<AlbDns>`）
-* [ ] **CI**：GitHub Actions が OIDC でロールを Assume している（長期キー未使用）。
-* [ ] **ログ**：CloudWatch Logs にアプリログが流れている。
+* [ ] **フロント**：`SpaUrl` にアクセスして反映確認
+* [ ] **API**：`http(s)://<AlbDns>/actuator/health` が `{"status":"UP"}`
+* [ ] **連携**：フロントから `/api/...` が動く（CORS/ルーティングOK）
+* [ ] **CI**：Actions が OIDC で AssumeRole（長期キー未使用）
+* [ ] **ログ**：CloudWatch Logs にアプリログが出力
 
 ---
 
-## 6. 次の一歩（業務寄り拡張）
+## 6. 次の一歩（実務寄り拡張）
 
-* **ステージング環境**：`stg` 用のStack/パラメータを追加 → PRマージ前にE2E（Playwright）合格で自動デプロイ。
-* **Secrets/SSM**：DBパス等は Secrets Manager/SSM 参照、環境変数に直接書かない。
-* **Blue/Green**：`aws-codedeploy` をCDKに組込み、ECSのトラフィック切替と自動ロールバック。
-* **監視**：ALB 5xx・p95レイテンシ・ECS CPU/Mem の Alarm を Slack 通知。
-* **WAF**：重要APIはCloudFront/ALBの前段にWAF。
-* **ドメイン/証明書**：Route53 + ACM で独自ドメイン・HTTPS化。
+* **ステージング環境**：`stg` Stack + Playwright E2E 合格で自動デプロイ
+* **Secrets/SSM**：DB接続等は Secrets Manager/SSM 経由
+* **Blue/Green**：Codedeploy + ECS で段階切替/自動ロールバック
+* **監視**：ALB 5xx、p95 レイテンシ、ECS CPU/Mem で Alarm → Slack
+* **WAF**：重要なエンドポイントはWAFで保護
+* **独自ドメイン**：Route53 + ACM で HTTPS 化
 
 ---
 
-必要なら、**CloudFrontのオリジン分岐（`/*`→S3, `/api/*`→ALB）をCDKで書く例**や、**CDK側のECRイメージ参照（`fromEcrRepository`）版**にすぐ展開します。
-まずは上の手順で最小構成を一度**通して動かす**のがおすすめです。
+### 補足：ローカルでの ECR/ECS テスト小ワザ
+
+```bash
+# SSOでログイン済みのプロファイルを使ってECRログイン（ローカル検証用）
+aws ecr get-login-password --profile dev --region ap-northeast-1 \
+| docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.ap-northeast-1.amazonaws.com
+```
+
+---
+
+必要なら、**CloudFrontのオリジン分岐（`/*`→S3, `/api/*`→ALB）をCDKで書く具体コード**や、**CDKをECRの既存イメージ参照（`fromEcrRepository`）に切り替える版**もすぐ出します。
+まずはこの手順で **pnpm 前提**の最小構成を一度通してみてください。
