@@ -7,7 +7,7 @@ const routes = [
   { path: '/login', component: LoginPage },
   {
     path: '/dashboard',
-    component: () => import('@/pages/DashboardPage.vue'),
+    component: () => import('../pages/DashboardPage.vue'),
     meta: { requiresAuth: true },
   },
 ]
@@ -17,7 +17,7 @@ const router = createRouter({
   routes,
 })
 
-// グローバルガード
+// ナビゲーションガード
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) {

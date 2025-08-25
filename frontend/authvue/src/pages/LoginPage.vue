@@ -45,10 +45,7 @@ async function handleLogin() {
       password: password.value,
     })
 
-    // トークンをストアに保存
     auth.login(response.token)
-
-    // ダッシュボードへ遷移
     router.push('/dashboard')
   } catch (err: unknown) {
     errorMessage.value = 'ログインに失敗しました'

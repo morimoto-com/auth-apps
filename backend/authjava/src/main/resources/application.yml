@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: authjava
+logging:
+  level:
+    root: INFO
+    org:
+      springframework:
+        web: DEBUG
+      hibernate: WARN

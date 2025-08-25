@@ -1,4 +1,4 @@
-package com.authjava.authjava;
+package com.authjava;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
