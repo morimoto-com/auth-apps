@@ -1,11 +1,12 @@
-import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 
 if (import.meta.env.DEV) {
-  const { worker } = await import('@/mocks/worker')
-  worker.start()
+  // モックを使うときはコメント解除＋frontend\authvue\.env.developmentを編集
+  // const { worker } = await import('@/mocks/worker')
+  // worker.start()
 }
 
 const app = createApp(App)
