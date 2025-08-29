@@ -1,15 +1,15 @@
 <template>
   <div class="flex flex-col items-center justify-center min-h-screen bg-gray-100">
     <div class="bg-white shadow-md rounded-lg p-6 w-80">
-      <h1 class="text-xl font-bold mb-4">ログイン</h1>
+      <h1 class="text-xl font-bold mb-4">login</h1>
       <form @submit.prevent="handleLogin">
         <label class="block mb-2">
-          ログインID
+          id
           <input v-model="loginId" type="text" class="w-full border px-2 py-1 rounded" />
         </label>
 
         <label class="block mb-4">
-          パスワード
+          pass
           <input v-model="password" type="password" class="w-full border px-2 py-1 rounded" />
         </label>
 
@@ -17,7 +17,7 @@
           type="submit"
           class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded"
         >
-          ログイン
+          submit
         </button>
       </form>
       <p v-if="errorMessage" class="text-red-500 text-sm mt-2">{{ errorMessage }}</p>
@@ -48,7 +48,7 @@ async function handleLogin() {
     auth.login(response.token)
     router.push('/dashboard')
   } catch (err: unknown) {
-    errorMessage.value = 'ログインに失敗しました'
+    errorMessage.value = 'error login'
     console.error(err)
   }
 }

@@ -4,12 +4,16 @@ import com.authjava.dto.LoginRequest;
 import com.authjava.dto.LoginResponse;
 import com.authjava.dto.UserInfoResponse;
 import com.authjava.util.JwtUtil;
+
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api")
+@Slf4j
 public class AuthController {
 
   @PostMapping("/login")
@@ -24,6 +28,7 @@ public class AuthController {
 
   @GetMapping("/userinfo")
   public ResponseEntity<UserInfoResponse> userinfo(@RequestHeader("Authorization") String authHeader) {
+    log.info("java application");
     if (authHeader != null && authHeader.startsWith("Bearer ")) {
       String token = authHeader.substring(7);
       try {
