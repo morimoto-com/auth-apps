@@ -14,3 +14,9 @@ server:
     session:
       cookie:
         same-site: lax
+security:
+  jwt:
+    # 32バイト以上のランダムをBase64化して格納（例はダミー）
+    secret-base64: "mHV6mE2k8vK3pG0zP2Rk1dF9w4u7x9y1s3a5d7f9h1j3l5n7p9r=="
+    issuer: "authjava"
+    audience: "api://authjava"

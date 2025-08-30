@@ -32,17 +32,27 @@ public class AuthController {
   }
 
   @GetMapping("/userinfo")
-  public ResponseEntity<UserInfoResponse> userinfo(@RequestHeader("Authorization") String authHeader) {
-    log.info("java application");
-    if (authHeader != null && authHeader.startsWith("Bearer ")) {
-      String token = authHeader.substring(7);
-      try {
-        String username = JwtUtil.validateToken(token);
-        return ResponseEntity.ok(new UserInfoResponse(username));
-      } catch (Exception e) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-      }
+  public ResponseEntity<UserInfoResponse> userinfo(
+      @RequestHeader(value = "Authorization", required = false) String authHeader) {
+  
+    log.info("java application /userinfo");
+  
+    var result = JwtUtil.validate(authHeader); // validate内でBearer除去＆例外ハンドリング
+  
+    if (!result.valid) {
+      // 401 + WWW-Authenticate で何が不正かを示す（RFC 6750）
+      String wwwAuth = String.format(
+          "Bearer error=\"invalid_token\", error_description=\"%s\"",
+          result.errorCode != null ? result.errorCode : "invalid"
+      );
+      return ResponseEntity
+          .status(HttpStatus.UNAUTHORIZED)
+          .header("WWW-Authenticate", wwwAuth)
+          .build();
     }
-    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+  
+    String username = result.claims.getSubject();
+    return ResponseEntity.ok(new UserInfoResponse(username));
   }
+  
 }
