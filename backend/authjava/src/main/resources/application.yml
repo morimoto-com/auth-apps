@@ -8,3 +8,9 @@ logging:
       springframework:
         web: DEBUG
       hibernate: WARN
+      security: DEBUG
+server:
+  servlet:
+    session:
+      cookie:
+        same-site: lax

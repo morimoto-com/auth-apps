@@ -1,14 +1,15 @@
 package com.authjava.config;
 
+import java.util.Arrays;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.Arrays;
 
 @Configuration
 public class SecurityConfig {
@@ -19,10 +20,11 @@ public class SecurityConfig {
         .csrf(csrf -> csrf.disable())
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/api/login").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/userinfo").authenticated()
             .anyRequest().authenticated())
-        .cors(cors -> {
-        }); // ← CORSを有効化
-    return http.build();
+            .cors(cors -> {}) // ← CORSを有効化
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}));
+        return http.build();
   }
 
   @Bean
