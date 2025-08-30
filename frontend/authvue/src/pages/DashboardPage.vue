@@ -13,7 +13,7 @@ async function getUserInfo() {
     const res = await apiGet('/userinfo')
     username.value = res.username
   } catch (err) {
-    username.value = '取得できませんでした'
+    username.value = 'not found'
     console.error(err)
   }
 }
@@ -27,9 +27,9 @@ function handleLogout() {
 <template>
   <div class="flex flex-col items-center justify-center min-h-screen bg-green-50">
     <div class="bg-white shadow-md rounded-lg p-6 w-96 text-center">
-      <h1 class="text-2xl font-bold mb-4">ダッシュボード</h1>
-      <button @click="getUserInfo()">ユーザ名取得</button>
-      <p class="mb-4">ユーザー名: {{ username }}</p>
+      <h1 class="text-2xl font-bold mb-4">dashboard</h1>
+      <button @click="getUserInfo()">get username</button>
+      <p class="mb-4">you: {{ username }}</p>
 
       <button
         @click="handleLogout"

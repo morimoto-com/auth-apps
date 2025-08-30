@@ -14,8 +14,11 @@ import com.authjava.dto.LoginResponse;
 import com.authjava.dto.UserInfoResponse;
 import com.authjava.util.JwtUtil;
 
+import lombok.extern.slf4j.Slf4j;
+
 @RestController
 @RequestMapping("/api")
+@Slf4j
 public class AuthController {
 
   @PostMapping("/login")
@@ -30,7 +33,7 @@ public class AuthController {
 
   @GetMapping("/userinfo")
   public ResponseEntity<UserInfoResponse> userinfo(@RequestHeader("Authorization") String authHeader) {
-    System.out.println("testtest");
+    log.info("java application");
     if (authHeader != null && authHeader.startsWith("Bearer ")) {
       String token = authHeader.substring(7);
       try {
