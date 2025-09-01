@@ -1,58 +1,85 @@
 package com.authjava.util;
 
-import io.jsonwebtoken.*;
-import io.jsonwebtoken.security.Keys;
-
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.Objects;
 
+import javax.crypto.SecretKey;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.Header;
+import io.jsonwebtoken.IncorrectClaimException;
+import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.JwtParser;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.MissingClaimException;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.SignatureException;
+import io.jsonwebtoken.UnsupportedJwtException;
+import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+
+@Component
 public class JwtUtil {
 
-    // ====== 設定値（環境変数や設定ファイルから注入推奨）======
-    // HS256 では 少なくとも 32 bytes (256-bit) 以上の強度を確保
-    private static final String SECRET = System.getenv().getOrDefault(
-            "JWT_HS256_SECRET",
-            "CHANGE_ME_to_32+_bytes_random_secret________________________________"
-    );
-    private static final String ISSUER = System.getenv().getOrDefault("JWT_ISSUER", "authjava");
-    private static final String AUDIENCE = System.getenv().getOrDefault("JWT_AUDIENCE", "api://authjava");
-    private static final long EXP_SECONDS = Long.parseLong(System.getenv().getOrDefault("JWT_EXP_SECONDS", "3600"));
+    @Value("${security.jwt.secret-base64}")
+    private String secretBase64;
+
+    @Value("${security.jwt.issuer:authjava}")
+    private String issuer;
+
+    @Value("${security.jwt.audience:api://authjava}")
+    private String audience;
+
+    @Value("${security.jwt.exp-seconds:3600}")
+    private long expSeconds;
+
     private static final long CLOCK_SKEW_SECONDS = 60; // 許容する時計ずれ
 
-    private static final SecretKey KEY = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+    private SecretKey key;
+    private JwtParser parser;
 
-    private static JwtParser parser() {
-        return Jwts.parserBuilder()
-                .setSigningKey(KEY)
-                .requireIssuer(ISSUER)
-                .requireAudience(AUDIENCE)
+    @PostConstruct
+    void init() {
+        byte[] decoded = Base64.getDecoder().decode(secretBase64.trim());
+        if (decoded.length < 32) {
+            throw new IllegalStateException("HS256 secret must be >= 32 bytes after Base64 decode");
+        }
+        this.key = Keys.hmacShaKeyFor(decoded);
+
+        this.parser = Jwts.parserBuilder()
+                .setSigningKey(key)
+                .requireIssuer(issuer)
+                .requireAudience(audience)
                 .setAllowedClockSkewSeconds(CLOCK_SKEW_SECONDS)
                 .build();
     }
 
     // ============ 発行 ============
-    public static String generateToken(String subject) {
+    public String generateToken(String subject) {
         Instant now = Instant.now();
         return Jwts.builder()
-                .setHeaderParam(Header.TYPE, Header.JWT_TYPE)     // typ: "JWT"
+                .setHeaderParam(Header.TYPE, Header.JWT_TYPE) // typ: "JWT"
                 .setSubject(Objects.requireNonNull(subject))
-                .setIssuer(ISSUER)
-                .setAudience(AUDIENCE)
+                .setIssuer(issuer)
+                .setAudience(audience)
                 .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(now.plusSeconds(EXP_SECONDS)))
-                // .claim("roles", List.of("USER"))  // 役割を積みたい場合の例
-                .signWith(KEY, SignatureAlgorithm.HS256)          // アルゴリズムを明示
+                .setExpiration(Date.from(now.plusSeconds(expSeconds)))
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 
     // ============ 検証 ============
-    public static VerificationResult validate(String tokenOrBearer) {
+    public VerificationResult validate(String tokenOrBearer) {
         String token = stripBearer(tokenOrBearer);
         try {
-            Jws<Claims> jws = parser().parseClaimsJws(token);
+            Jws<Claims> jws = parser.parseClaimsJws(token);
             Claims c = jws.getBody();
             return VerificationResult.ok(c);
         } catch (ExpiredJwtException e) {
@@ -69,8 +96,9 @@ public class JwtUtil {
     }
 
     // ============ ユーティリティ ============
-    public static String stripBearer(String tokenOrBearer) {
-        if (tokenOrBearer == null) return null;
+    private static String stripBearer(String tokenOrBearer) {
+        if (tokenOrBearer == null)
+            return null;
         String t = tokenOrBearer.trim();
         if (t.regionMatches(true, 0, "Bearer ", 0, 7)) {
             return t.substring(7).trim();
@@ -78,11 +106,11 @@ public class JwtUtil {
         return t;
     }
 
-    // 検証結果を扱いやすくする小さなDTO
+    // 検証結果DTO
     public static class VerificationResult {
         public final boolean valid;
-        public final Claims claims;      // sub, iss, aud, exp などにアクセス可
-        public final String errorCode;   // "TOKEN_EXPIRED" 等
+        public final Claims claims;
+        public final String errorCode;
         public final String errorMessage;
 
         private VerificationResult(boolean valid, Claims claims, String errorCode, String errorMessage) {
